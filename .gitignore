@@ -1,0 +1,17 @@
+# Visual Studio default ignore list
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.user
+*.sln.docstates
+*.log
+*.tlog
+*.cache
+*.pdb
+*.exe
+*.dll
+packages/
+demo_workspaces/
+TestResults/
