@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
 using System.IO;
-using CollabClient.Services;
+using CollabClientApp;
 
 class Program
 {
@@ -18,12 +18,21 @@ class Program
         var server = args[0];
         var sessionId = args[1];
 
-        var client = new CollabService(server, sessionId);
-        await client.StartAsync();
-
-        Console.WriteLine("Running. Press Enter to exit.");
-        Console.ReadLine();
-
-        await client.StopAsync();
+        var client = new CollabClient(server, sessionId);
+        
+        try
+        {
+            await client.StartAsync();
+            Console.WriteLine("Running. Press Enter to exit.");
+            Console.ReadLine();
+            await client.StopAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fatal error: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            Console.WriteLine("Press Enter to exit...");
+            Console.ReadLine();
+        }
     }
 }

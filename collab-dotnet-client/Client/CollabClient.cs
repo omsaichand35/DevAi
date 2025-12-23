@@ -3,16 +3,16 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace CollabClient.Services
+namespace CollabClientApp
 {
-    public class CollabService
+    public class CollabClient
     {
         private readonly string _server;
         private readonly string _session;
         private HubConnection? _conn;
         private FileWatcher? _watcher;
 
-        public CollabService(string server, string session)
+        public CollabClient(string server, string session)
         {
             _server = server; _session = session;
         }
@@ -35,18 +35,28 @@ namespace CollabClient.Services
             _conn.On<string, byte[]>("FileUpdateBinary", (path, update) =>
             {
                 Console.WriteLine($"Received binary update for {path}: {update?.Length ?? 0} bytes");
-                // Apply CRDT update locally (not implemented in MVP)
+                
+                // Write to disk
                 try
                 {
                     var fullPath = Path.Combine(Directory.GetCurrentDirectory(), path);
-                    var dir = Path.GetDirectoryName(fullPath);
-                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                     
-                    // Temporarily disable watcher to avoid infinite loop
+                    // Stop watcher to prevent loop
                     if (_watcher != null) _watcher.Stop();
                     
-                    File.WriteAllBytes(fullPath, update);
-                    Console.WriteLine($"Wrote {update.Length} bytes to {fullPath}");
+                    var dir = Path.GetDirectoryName(fullPath);
+                    if (!string.IsNullOrEmpty(dir))
+                        Directory.CreateDirectory(dir);
+                        
+                    if (update == null || update.Length == 0)
+                    {
+                        // Handle empty file or delete? For now just write empty
+                        File.WriteAllBytes(fullPath, Array.Empty<byte>());
+                    }
+                    else
+                    {
+                        File.WriteAllBytes(fullPath, update);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -58,14 +68,24 @@ namespace CollabClient.Services
                 }
             });
 
-            _conn.On<object>("FileCreated", (evt) =>
+            // Retry loop for initial connection
+            int retries = 0;
+            while (true)
             {
-                // Handle file creation if needed, though FileUpdateBinary usually covers content
-                Console.WriteLine($"File created event received: {evt}");
-            });
-
-            await _conn.StartAsync();
-            Console.WriteLine("Connected to server");
+                try
+                {
+                    await _conn.StartAsync();
+                    Console.WriteLine("Connected to server");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    retries++;
+                    if (retries > 5) throw;
+                    Console.WriteLine($"Connection failed: {ex.Message}. Retrying in 2s...");
+                    await Task.Delay(2000);
+                }
+            }
 
             // Join session as editor (for MVP)
             await _conn.InvokeAsync("JoinSession", _session, "Editor");

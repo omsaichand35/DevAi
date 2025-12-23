@@ -30,8 +30,8 @@ public class CollabHub : Hub
     public async Task JoinSession(string sessionId, string role)
     {
         var userId = GetUserId();
-        // if (string.IsNullOrEmpty(userId))
-        //    throw new HubException("Unauthorized");
+        if (string.IsNullOrEmpty(userId))
+            throw new HubException("Unauthorized");
 
         var session = _sessions.GetOrCreateSession(sessionId);
         session.AddParticipant(userId, Context.ConnectionId, role);

@@ -14,11 +14,12 @@ Start-Process dotnet -ArgumentList "$serverDll --urls http://localhost:5000" -Wo
 
 Start-Sleep -Seconds 5
 
-Write-Host "Starting Client 1..."
-Start-Process dotnet -ArgumentList "$clientDll http://localhost:5000 demo" -WorkingDirectory $ws1
+# Clients will be started from DevAi UI
+# Write-Host "Starting Client 1..."
+# Start-Process dotnet -ArgumentList "$clientDll http://localhost:5000 demo" -WorkingDirectory $ws1
 
-Write-Host "Starting Client 2..."
-Start-Process dotnet -ArgumentList "$clientDll http://localhost:5000 demo" -WorkingDirectory $ws2
+# Write-Host "Starting Client 2..."
+# Start-Process dotnet -ArgumentList "$clientDll http://localhost:5000 demo" -WorkingDirectory $ws2
 
 Write-Host "Starting DevAi 1..."
 Start-Process $devAiExe -WorkingDirectory $ws1

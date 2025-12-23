@@ -22,7 +22,11 @@ namespace DevAi
         int inputStartIndex = 0;
 
         private Process cmdProcess;
+        private Process collabClientProcess;
+        private string currentWorkspacePath;
         private StreamWriter cmdInputWriter;
+        private FileSystemWatcher chatWatcher;
+        private string chatLogPath;
 
         private readonly string csharpKeywords =
             "abstract as base bool break byte case catch char checked class const continue " +
@@ -66,7 +70,11 @@ namespace DevAi
         {
             InitializeComponent();
 
-            this.Shown += (s, e) => StartTerminal();
+            this.Shown += (s, e) => 
+            {
+                StartTerminal();
+                LoadFolder(Environment.CurrentDirectory);
+            };
 
             // wire terminal keypress to capture characters reliably
             this.terminalBox.KeyPress += terminalBox_KeyPress;
@@ -589,6 +597,22 @@ namespace DevAi
                 }
             }
 
+            // Ctrl+E: Toggle Explorer
+            if (keyData == (Keys.Control | Keys.E))
+            {
+                explorerToolStripMenuItem.Checked = !explorerToolStripMenuItem.Checked;
+                explorerToolStripMenuItem_Click(null, null);
+                return true;
+            }
+
+            // Ctrl+D: Toggle Chat Window
+            if (keyData == (Keys.Control | Keys.D))
+            {
+                sidebarToolStripMenuItem.Checked = !sidebarToolStripMenuItem.Checked;
+                sidebarToolStripMenuItem_Click(null, null);
+                return true;
+            }
+
 
             // Ctrl+W: Close current tab
             if (keyData == (Keys.Control | Keys.W))
@@ -662,6 +686,15 @@ namespace DevAi
                 {
                     CreateNewTab();
                 }
+            }
+        }
+
+        private void CloseAllTabs()
+        {
+            while (tabControl1.TabPages.Count > 0)
+            {
+                tabControl1.SelectedTab = tabControl1.TabPages[0];
+                CloseCurrentTab();
             }
         }
 
@@ -769,6 +802,47 @@ namespace DevAi
             }
         }
 
+        private void autoSaveToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (autoSaveToolStripMenuItem.Checked)
+            {
+                autoSaveTimer.Start();
+            }
+            else
+            {
+                autoSaveTimer.Stop();
+            }
+        }
+
+        private void autoSaveTimer_Tick(object sender, EventArgs e)
+        {
+            foreach (TabPage tab in tabControl1.TabPages)
+            {
+                TabData data = tab.Tag as TabData;
+                if (data != null && data.IsModified && !string.IsNullOrEmpty(data.FilePath))
+                {
+                    Scintilla textBox = tab.Controls.OfType<Scintilla>().FirstOrDefault();
+                    if (textBox != null)
+                    {
+                        try
+                        {
+                            File.WriteAllText(data.FilePath, textBox.Text);
+                            data.IsModified = false;
+                            
+                            string fileName = Path.GetFileName(data.FilePath);
+                            tab.Text = fileName;
+                            
+                            if (tabControl1.SelectedTab == tab)
+                            {
+                                this.Text = fileName + " - SimpleTextEditor";
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+
         private void UpdateTabTitle()
         {
             if (tabControl1.SelectedTab != null)
@@ -852,6 +926,21 @@ namespace DevAi
                         cmdProcess.Kill();
                 }
                 catch { }
+
+                try
+                {
+                    if (collabClientProcess != null && !collabClientProcess.HasExited)
+                        collabClientProcess.Kill();
+                }
+                catch { }
+
+                try
+                {
+                    if (collabServerProcess != null && !collabServerProcess.HasExited)
+                        collabServerProcess.Kill();
+                }
+                catch { }
+
                 base.OnFormClosing(e);
             }
 
@@ -1523,6 +1612,206 @@ namespace DevAi
             runToolStripMenuItem_Click(sender, e);
         }
 
+        private void openExternalTerminalToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string path = Environment.CurrentDirectory;
+                // If a folder is open, use that
+                if (fileTreeView.Nodes.Count > 0 && fileTreeView.Nodes[0].Tag is string rootPath)
+                {
+                    path = rootPath;
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    WorkingDirectory = path
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error opening terminal: " + ex.Message);
+            }
+        }
+
+        private Process collabServerProcess;
+
+        private void hostToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (collabServerProcess != null && !collabServerProcess.HasExited)
+            {
+                MessageBox.Show("Server is already running.");
+                return;
+            }
+
+            try
+            {
+                string serverDllPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\collab-dotnet-server\bin\Debug\net6.0\collab-dotnet-server.dll"));
+                
+                if (!File.Exists(serverDllPath))
+                {
+                    MessageBox.Show($"Server DLL not found at {serverDllPath}");
+                    return;
+                }
+
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"\"{serverDllPath}\" --urls http://0.0.0.0:5000",
+                    UseShellExecute = false,
+                    CreateNoWindow = true, // Hide the server window
+                    WorkingDirectory = Path.GetDirectoryName(serverDllPath)
+                };
+
+                collabServerProcess = Process.Start(psi);
+                
+                string localIp = GetLocalIPAddress();
+                MessageBox.Show($"Session Hosted!\n\nYour Local IP: {localIp}\nPort: 5000\n\nShare this IP with others so they can join.\n\nConnecting you to localhost...", "Host Started");
+
+                // Auto-connect self
+                StartClient("localhost");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to start host: {ex.Message}");
+            }
+        }
+
+        private void joinToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Simple input dialog replacement since we don't have VB ref
+            string ip = "localhost";
+            using (Form inputForm = new Form())
+            {
+                inputForm.Width = 300;
+                inputForm.Height = 150;
+                inputForm.Text = "Join Session";
+                inputForm.StartPosition = FormStartPosition.CenterParent;
+                
+                Label lbl = new Label() { Left = 10, Top = 10, Text = "Enter Host IP Address:" };
+                TextBox txt = new TextBox() { Left = 10, Top = 35, Width = 260, Text = "localhost" };
+                Button btnOk = new Button() { Text = "OK", Left = 190, Width = 80, Top = 70, DialogResult = DialogResult.OK };
+                
+                inputForm.Controls.Add(lbl);
+                inputForm.Controls.Add(txt);
+                inputForm.Controls.Add(btnOk);
+                inputForm.AcceptButton = btnOk;
+
+                if (inputForm.ShowDialog() == DialogResult.OK)
+                {
+                    ip = txt.Text;
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(ip)) return;
+
+            StartClient(ip);
+        }
+
+        private void StartClient(string ipAddress)
+        {
+            if (collabClientProcess != null && !collabClientProcess.HasExited)
+            {
+                MessageBox.Show("Already connected.");
+                return;
+            }
+
+            string workspace = currentWorkspacePath;
+            if (string.IsNullOrEmpty(workspace))
+            {
+                // Fallback to current directory or ask user
+                if (fileTreeView.Nodes.Count > 0 && fileTreeView.Nodes[0].Tag is string rootPath)
+                {
+                    workspace = rootPath;
+                }
+                else
+                {
+                    workspace = Environment.CurrentDirectory;
+                }
+            }
+
+            // Assume client is in ../collab-dotnet-client/bin/Debug/net6.0/collab-dotnet-client.exe relative to DevAi.exe
+            // DevAi.exe is in DevAi/bin/Debug
+            string clientPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\collab-dotnet-client\bin\Debug\net6.0\collab-dotnet-client.exe"));
+            
+            if (!File.Exists(clientPath))
+            {
+                MessageBox.Show($"Client executable not found at {clientPath}");
+                return;
+            }
+
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = clientPath,
+                    Arguments = $"http://{ipAddress}:5000 demo", 
+                    WorkingDirectory = workspace,
+                    UseShellExecute = false,
+                    CreateNoWindow = true // Hide client window too for cleaner UX
+                };
+
+                collabClientProcess = Process.Start(psi);
+                MessageBox.Show($"Connected to {ipAddress}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to start client: {ex.Message}");
+            }
+        }
+
+        private string GetLocalIPAddress()
+        {
+            try
+            {
+                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        return ip.ToString();
+                    }
+                }
+            }
+            catch { }
+            return "127.0.0.1";
+        }
+
+        private void disconnectToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            bool disconnected = false;
+            if (collabClientProcess != null && !collabClientProcess.HasExited)
+            {
+                try
+                {
+                    collabClientProcess.Kill();
+                    collabClientProcess = null;
+                    disconnected = true;
+                }
+                catch { }
+            }
+
+            if (collabServerProcess != null && !collabServerProcess.HasExited)
+            {
+                try
+                {
+                    collabServerProcess.Kill();
+                    collabServerProcess = null;
+                    MessageBox.Show("Host stopped.");
+                    disconnected = true;
+                }
+                catch { }
+            }
+
+            if (disconnected)
+                MessageBox.Show("Disconnected.");
+        }
+
         private void ResetRunState()
         {
             isRunning = false;
@@ -1757,6 +2046,357 @@ namespace DevAi
                 // ignore exceptions during shutdown
             }
         }
+        private void openFolderToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (var fbd = new FolderBrowserDialog())
+            {
+                if (fbd.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(fbd.SelectedPath))
+                {
+                    LoadFolder(fbd.SelectedPath);
+                }
+            }
+        }
+
+        private FileSystemWatcher workspaceWatcher;
+
+        private void LoadFolder(string path)
+        {
+            currentWorkspacePath = path;
+            fileTreeView.Nodes.Clear();
+            var rootNode = new TreeNode(Path.GetFileName(path)) { Tag = path };
+            fileTreeView.Nodes.Add(rootNode);
+            PopulateTreeView(path, rootNode);
+            rootNode.Expand();
+
+            // Setup Workspace Watcher
+            if (workspaceWatcher != null)
+            {
+                workspaceWatcher.Dispose();
+                workspaceWatcher = null;
+            }
+
+            try
+            {
+                workspaceWatcher = new FileSystemWatcher(path);
+                workspaceWatcher.IncludeSubdirectories = true;
+                workspaceWatcher.EnableRaisingEvents = true;
+                workspaceWatcher.Created += OnWorkspaceChanged;
+                workspaceWatcher.Deleted += OnWorkspaceChanged;
+                workspaceWatcher.Renamed += OnWorkspaceChanged;
+                workspaceWatcher.Changed += OnFileChanged;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to start workspace watcher: " + ex.Message);
+            }
+
+            // Update terminal directory
+            try
+            {
+                if (cmdInputWriter != null && !cmdProcess.HasExited)
+                {
+                    cmdInputWriter.WriteLine("cd /d " + QuotePath(path));
+                    cmdInputWriter.Flush();
+                    lastTerminalDir = path;
+                }
+            }
+            catch { }
+
+            // Initialize Chat Watcher
+            try
+            {
+                if (chatWatcher != null)
+                {
+                    chatWatcher.Dispose();
+                    chatWatcher = null;
+                }
+
+                chatLogPath = Path.Combine(path, "chat.log");
+                chatWatcher = new FileSystemWatcher(path, "chat.log");
+                chatWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime;
+                chatWatcher.Changed += ChatWatcher_Changed;
+                chatWatcher.Created += ChatWatcher_Changed;
+                chatWatcher.EnableRaisingEvents = true;
+
+                ReloadChat();
+            }
+            catch { }
+        }
+
+        private void ChatWatcher_Changed(object sender, FileSystemEventArgs e)
+        {
+            this.BeginInvoke(new Action(() => ReloadChat()));
+        }
+
+        private void ReloadChat()
+        {
+            try
+            {
+                if (!File.Exists(chatLogPath)) return;
+
+                using (var fs = new FileStream(chatLogPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var sr = new StreamReader(fs))
+                {
+                    var content = sr.ReadToEnd();
+                    chatHistoryBox.Clear();
+                    
+                    var lines = content.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        if (line.StartsWith("[Image:"))
+                        {
+                            try
+                            {
+                                string base64 = line.Substring(7, line.Length - 8); // [Image:...]
+                                byte[] bytes = Convert.FromBase64String(base64);
+                                using (var ms = new MemoryStream(bytes))
+                                {
+                                    Image img = Image.FromStream(ms);
+                                    Clipboard.SetImage(img);
+                                    chatHistoryBox.SelectionStart = chatHistoryBox.TextLength;
+                                    chatHistoryBox.Paste();
+                                    chatHistoryBox.AppendText("\n");
+                                }
+                            }
+                            catch { }
+                        }
+                        else
+                        {
+                            chatHistoryBox.AppendText(line + "\n");
+                        }
+                    }
+                    chatHistoryBox.SelectionStart = chatHistoryBox.TextLength;
+                    chatHistoryBox.ScrollToCaret();
+                }
+            }
+            catch { }
+        }
+
+        private void PopulateTreeView(string path, TreeNode parentNode)
+        {
+            try
+            {
+                var dirs = Directory.GetDirectories(path);
+                foreach (var dir in dirs)
+                {
+                    var node = new TreeNode(Path.GetFileName(dir)) { Tag = dir };
+                    parentNode.Nodes.Add(node);
+                    PopulateTreeView(dir, node);
+                }
+
+                var files = Directory.GetFiles(path);
+                foreach (var file in files)
+                {
+                    var node = new TreeNode(Path.GetFileName(file)) { Tag = file };
+                    parentNode.Nodes.Add(node);
+                }
+            }
+            catch (UnauthorizedAccessException) { }
+            catch (Exception ex) { Console.WriteLine(ex.Message); }
+        }
+
+        private void fileTreeView_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
+        {
+            if (e.Node.Tag is string path && File.Exists(path))
+            {
+                // Check if already open
+                foreach (TabPage tab in tabControl1.TabPages)
+                {
+                    if (tab.Tag is TabData data && data.FilePath == path)
+                    {
+                        tabControl1.SelectedTab = tab;
+                        return;
+                    }
+                }
+
+                // Open file
+                CreateNewTab(Path.GetFileName(path));
+                Scintilla textBox = GetCurrentTextBox();
+                if (textBox != null)
+                {
+                    textBox.Text = File.ReadAllText(path);
+                    TabData data = tabControl1.SelectedTab.Tag as TabData;
+                    if (data != null)
+                    {
+                        data.FilePath = path;
+                        data.IsModified = false;
+                    }
+                    this.Text = "Simple Text Editor - " + Path.GetFileName(path);
+                }
+            }
+        }
+
+        private void sidebarToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            editorChatSplitContainer.Panel2Collapsed = !sidebarToolStripMenuItem.Checked;
+        }
+
+        private void explorerToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            explorerSplitContainer.Panel1Collapsed = !explorerToolStripMenuItem.Checked;
+        }
+
+        private void AppendToChatLog(string text)
+        {
+            if (string.IsNullOrEmpty(chatLogPath)) return;
+            try
+            {
+                using (var fs = new FileStream(chatLogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                using (var sw = new StreamWriter(fs))
+                {
+                    sw.WriteLine(text);
+                }
+            }
+            catch { }
+        }
+
+        private void chatSendButton_Click(object sender, EventArgs e)
+        {
+            string message = chatInputBox.Text;
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                // chatHistoryBox.AppendText($"You: {message}\n"); // Handled by watcher
+                AppendToChatLog($"User: {message}");
+                chatInputBox.Clear();
+            }
+        }
+
+        private void chatEmojiButton_Click(object sender, EventArgs e)
+        {
+            // Simple emoji picker context menu
+            ContextMenuStrip emojiMenu = new ContextMenuStrip();
+            string[] emojis = { "😊", "😂", "👍", "❤️", "🎉", "🔥", "🐛", "💻", "🚀", "🤔" };
+            
+            foreach (var emoji in emojis)
+            {
+                emojiMenu.Items.Add(emoji, null, (s, args) => 
+                {
+                    chatInputBox.AppendText(emoji);
+                });
+            }
+            
+            emojiMenu.Show(chatEmojiButton, new Point(0, -emojiMenu.Height));
+        }
+
+        private void chatAttachButton_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Image Files|*.jpg;*.jpeg;*.png;*.gif;*.bmp";
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        byte[] bytes = File.ReadAllBytes(ofd.FileName);
+                        string base64 = Convert.ToBase64String(bytes);
+                        AppendToChatLog($"[Image:{base64}]");
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Error attaching image: " + ex.Message);
+                    }
+                }
+            }
+        }
+
+        private void OnWorkspaceChanged(object sender, FileSystemEventArgs e)
+        {
+            this.Invoke((MethodInvoker)delegate
+            {
+                RefreshExplorer();
+            });
+        }
+
+        private void OnFileChanged(object sender, FileSystemEventArgs e)
+        {
+            this.Invoke((MethodInvoker)delegate
+            {
+                foreach (TabPage tab in tabControl1.TabPages)
+                {
+                    if (tab.Tag is TabData data && data.FilePath == e.FullPath)
+                    {
+                        // If not modified by user, reload automatically
+                        if (!data.IsModified)
+                        {
+                            ReloadTab(tab);
+                        }
+                    }
+                }
+            });
+        }
+
+        private void RefreshExplorer()
+        {
+            if (string.IsNullOrEmpty(currentWorkspacePath)) return;
+            
+            // Simple refresh: reload tree
+            // Ideally we should preserve expansion state
+            fileTreeView.Nodes.Clear();
+            var rootNode = new TreeNode(Path.GetFileName(currentWorkspacePath)) { Tag = currentWorkspacePath };
+            fileTreeView.Nodes.Add(rootNode);
+            PopulateTreeView(currentWorkspacePath, rootNode);
+            rootNode.Expand();
+        }
+
+        private void ReloadTab(TabPage tab)
+        {
+            if (tab.Tag is TabData data && File.Exists(data.FilePath))
+            {
+                try
+                {
+                    // Use retry logic for reading file as it might be locked by collab client
+                    string text = ReadFileWithRetry(data.FilePath);
+                    
+                    if (tab.Controls.Count > 0 && tab.Controls[0] is Scintilla scintilla)
+                    {
+                        var currentPos = scintilla.CurrentPosition;
+                        scintilla.Text = text;
+                        scintilla.SetSavePoint();
+                        scintilla.GotoPosition(currentPos);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private string ReadFileWithRetry(string path)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                try
+                {
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var sr = new StreamReader(fs))
+                    {
+                        return sr.ReadToEnd();
+                    }
+                }
+                catch (IOException)
+                {
+                    System.Threading.Thread.Sleep(100);
+                }
+            }
+            return File.ReadAllText(path); // Fallback
+        }
+
+        private void reloadToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            RefreshExplorer();
+            if (tabControl1.SelectedTab != null)
+            {
+                ReloadTab(tabControl1.SelectedTab);
+            }
+        }
+
+        private void chatInputBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                chatSendButton.PerformClick();
+                e.SuppressKeyPress = true;
+            }
+        }
+
     }
 
     public class TabData
