@@ -120,6 +120,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AiAgent.cs" />
     <Compile Include="CompilerErrorInfo.cs" />
     <Compile Include="ConPty.cs" />
     <Compile Include="CSharpRunner.cs" />

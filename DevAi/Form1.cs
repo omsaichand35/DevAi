@@ -9,9 +9,18 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Reflection;
+using Newtonsoft.Json;
 
 namespace DevAi
 {
+    public class SessionState
+    {
+        public string LastWorkspace { get; set; }
+        public string LastFile { get; set; }
+        public List<string> OpenFiles { get; set; } = new List<string>();
+        public string ChatHistory { get; set; }
+    }
+
     public partial class Form1 : Form
     {
 
@@ -50,7 +59,7 @@ namespace DevAi
       };
 
         private RoslynIntellisenseService roslynService;
-
+        private AiAgent _aiAgent;
 
         private List<CompilerErrorInfo> lastErrors = new List<CompilerErrorInfo>();
         // Map of error marker ID -> error index for robust click mapping
@@ -73,7 +82,7 @@ namespace DevAi
             this.Shown += (s, e) => 
             {
                 StartTerminal();
-                LoadFolder(Environment.CurrentDirectory);
+                RestoreSession();
             };
 
             // wire terminal keypress to capture characters reliably
@@ -101,6 +110,8 @@ namespace DevAi
             {
                 roslynService = null;
             }
+
+            _aiAgent = new AiAgent();
 
             InitializeCollabMenu();
         }
@@ -940,6 +951,8 @@ namespace DevAi
                         collabServerProcess.Kill();
                 }
                 catch { }
+
+                SaveSession();
 
                 base.OnFormClosing(e);
             }
@@ -2197,32 +2210,9 @@ namespace DevAi
 
         private void fileTreeView_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
         {
-            if (e.Node.Tag is string path && File.Exists(path))
+            if (e.Node.Tag is string path)
             {
-                // Check if already open
-                foreach (TabPage tab in tabControl1.TabPages)
-                {
-                    if (tab.Tag is TabData data && data.FilePath == path)
-                    {
-                        tabControl1.SelectedTab = tab;
-                        return;
-                    }
-                }
-
-                // Open file
-                CreateNewTab(Path.GetFileName(path));
-                Scintilla textBox = GetCurrentTextBox();
-                if (textBox != null)
-                {
-                    textBox.Text = File.ReadAllText(path);
-                    TabData data = tabControl1.SelectedTab.Tag as TabData;
-                    if (data != null)
-                    {
-                        data.FilePath = path;
-                        data.IsModified = false;
-                    }
-                    this.Text = "Simple Text Editor - " + Path.GetFileName(path);
-                }
+                OpenFile(path);
             }
         }
 
@@ -2250,15 +2240,120 @@ namespace DevAi
             catch { }
         }
 
+        private void AppendToChat(string text)
+        {
+            if (chatHistoryBox.InvokeRequired)
+            {
+                chatHistoryBox.Invoke(new Action<string>(AppendToChat), text);
+                return;
+            }
+            
+            chatHistoryBox.AppendText(text + "\n\n");
+            chatHistoryBox.ScrollToCaret();
+            
+            // Also log to file to keep history consistent
+            AppendToChatLog(text);
+        }
+
+        private void AppendToAgentChat(string text)
+        {
+            if (agentHistoryBox.InvokeRequired)
+            {
+                agentHistoryBox.Invoke(new Action<string>(AppendToAgentChat), text);
+                return;
+            }
+            
+            agentHistoryBox.AppendText(text + "\n\n");
+            agentHistoryBox.ScrollToCaret();
+        }
+
+        private async void agentSendButton_Click(object sender, EventArgs e)
+        {
+            string question = agentInputBox.Text;
+            if (string.IsNullOrWhiteSpace(question)) return;
+
+            // Display user message
+            AppendToAgentChat($"You: {question}");
+            agentInputBox.Clear();
+            agentSendButton.Enabled = false;
+
+            // Get Code Context
+            string currentCode = "";
+            string currentFilePath = "CurrentFile.cs";
+            var editor = GetCurrentTextBox();
+            if (editor != null)
+            {
+                currentCode = editor.Text;
+                if (tabControl1.SelectedTab?.Tag is TabData data)
+                {
+                    currentFilePath = data.FilePath;
+                }
+            }
+
+            AppendToAgentChat("Agent: Thinking...");
+
+            // Call AI
+            string answer = await _aiAgent.GetResponseAsync(question, currentCode, currentFilePath);
+
+            // Check for auto-apply command (any intent to change code)
+            bool isChangeRequest = question.Trim().StartsWith("/replace", StringComparison.OrdinalIgnoreCase) ||
+                                   question.ToLower().Contains("change") ||
+                                   question.ToLower().Contains("fix") ||
+                                   question.ToLower().Contains("refactor") ||
+                                   question.ToLower().Contains("update") ||
+                                   question.ToLower().Contains("rewrite") ||
+                                   question.ToLower().Contains("implement");
+
+            if (isChangeRequest)
+            {
+                 string code = ExtractCode(answer);
+                 // Only apply if code block was actually found and it looks different
+                 if (editor != null && !string.IsNullOrWhiteSpace(code) && code.Trim() != answer.Trim())
+                 {
+                     editor.Text = code;
+                     AppendToAgentChat($"Agent: {answer}");
+                     AppendToAgentChat("Agent: Code updated in editor.");
+                 }
+                 else
+                 {
+                     AppendToAgentChat($"Agent: {answer}");
+                 }
+            }
+            else
+            {
+                AppendToAgentChat($"Agent: {answer}");
+            }
+            
+            agentSendButton.Enabled = true;
+        }
+
+        private void agentInputBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                agentSendButton.PerformClick();
+                e.SuppressKeyPress = true;
+            }
+        }
+
         private void chatSendButton_Click(object sender, EventArgs e)
         {
             string message = chatInputBox.Text;
             if (!string.IsNullOrWhiteSpace(message))
             {
-                // chatHistoryBox.AppendText($"You: {message}\n"); // Handled by watcher
                 AppendToChatLog($"User: {message}");
                 chatInputBox.Clear();
             }
+        }
+
+        private string ExtractCode(string response)
+        {
+            var match = Regex.Match(response, @"```\w*\s*([\s\S]*?)\s*```");
+            if (match.Success)
+            {
+                return match.Groups[1].Value;
+            }
+            return response;
         }
 
         private void chatEmojiButton_Click(object sender, EventArgs e)
@@ -2394,6 +2489,122 @@ namespace DevAi
             {
                 chatSendButton.PerformClick();
                 e.SuppressKeyPress = true;
+            }
+        }
+
+        private void chatClearButton_Click(object sender, EventArgs e)
+        {
+            chatHistoryBox.Clear();
+        }
+
+        private void OpenFile(string path)
+        {
+            if (!File.Exists(path)) return;
+
+            // Check if already open
+            foreach (TabPage tab in tabControl1.TabPages)
+            {
+                if (tab.Tag is TabData data && data.FilePath == path)
+                {
+                    tabControl1.SelectedTab = tab;
+                    return;
+                }
+            }
+
+            // Open file
+            CreateNewTab(Path.GetFileName(path));
+            Scintilla textBox = GetCurrentTextBox();
+            if (textBox != null)
+            {
+                textBox.Text = ReadFileWithRetry(path);
+                TabData data = tabControl1.SelectedTab.Tag as TabData;
+                if (data != null)
+                {
+                    data.FilePath = path;
+                    data.IsModified = false;
+                }
+                this.Text = "DevAi - " + Path.GetFileName(path);
+            }
+        }
+
+        private void SaveSession()
+        {
+            try
+            {
+                var state = new SessionState
+                {
+                    LastWorkspace = currentWorkspacePath,
+                    ChatHistory = chatHistoryBox.Rtf,
+                    LastFile = null,
+                    OpenFiles = new List<string>()
+                };
+
+                foreach (TabPage tab in tabControl1.TabPages)
+                {
+                    if (tab.Tag is TabData data && !string.IsNullOrEmpty(data.FilePath))
+                    {
+                        state.OpenFiles.Add(data.FilePath);
+                    }
+                }
+
+                if (tabControl1.SelectedTab != null && tabControl1.SelectedTab.Tag is TabData selectedData)
+                {
+                    state.LastFile = selectedData.FilePath;
+                }
+
+                string json = JsonConvert.SerializeObject(state);
+                File.WriteAllText("session.json", json);
+            }
+            catch { }
+        }
+
+        private void RestoreSession()
+        {
+            try
+            {
+                if (File.Exists("session.json"))
+                {
+                    string json = File.ReadAllText("session.json");
+                    var state = JsonConvert.DeserializeObject<SessionState>(json);
+
+                    if (!string.IsNullOrEmpty(state.LastWorkspace) && Directory.Exists(state.LastWorkspace))
+                    {
+                        LoadFolder(state.LastWorkspace);
+                    }
+                    else
+                    {
+                        LoadFolder(Environment.CurrentDirectory);
+                    }
+
+                    if (!string.IsNullOrEmpty(state.ChatHistory))
+                    {
+                        try { chatHistoryBox.Rtf = state.ChatHistory; } catch { chatHistoryBox.Text = ""; }
+                    }
+
+                    if (state.OpenFiles != null)
+                    {
+                        foreach (var file in state.OpenFiles)
+                        {
+                            if (File.Exists(file))
+                            {
+                                OpenFile(file);
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(state.LastFile) && File.Exists(state.LastFile))
+                    {
+                        OpenFile(state.LastFile);
+                    }
+                }
+                else
+                {
+                    LoadFolder(Environment.CurrentDirectory);
+                }
+            }
+            catch 
+            {
+                LoadFolder(Environment.CurrentDirectory);
             }
         }
 

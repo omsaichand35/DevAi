@@ -81,7 +81,13 @@
             this.chatHistoryBox = new System.Windows.Forms.RichTextBox();
             this.chatInputPanel = new System.Windows.Forms.Panel();
             this.chatInputBox = new System.Windows.Forms.TextBox();
+            this.chatClearButton = new System.Windows.Forms.Button();
             this.chatSendButton = new System.Windows.Forms.Button();
+            this.tabPageAgent = new System.Windows.Forms.TabPage();
+            this.agentHistoryBox = new System.Windows.Forms.RichTextBox();
+            this.agentInputPanel = new System.Windows.Forms.Panel();
+            this.agentInputBox = new System.Windows.Forms.TextBox();
+            this.agentSendButton = new System.Windows.Forms.Button();
             this.bottomTabControl = new System.Windows.Forms.TabControl();
             this.tabPageOutput = new System.Windows.Forms.TabPage();
             this.richTextBox1 = new System.Windows.Forms.RichTextBox();
@@ -532,6 +538,7 @@
             // sidebarTabControl
             // 
             this.sidebarTabControl.Controls.Add(this.tabPageChat);
+            this.sidebarTabControl.Controls.Add(this.tabPageAgent);
             this.sidebarTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
             this.sidebarTabControl.Location = new System.Drawing.Point(0, 0);
             this.sidebarTabControl.Name = "sidebarTabControl";
@@ -566,6 +573,7 @@
             // chatInputPanel
             // 
             this.chatInputPanel.Controls.Add(this.chatInputBox);
+            this.chatInputPanel.Controls.Add(this.chatClearButton);
             this.chatInputPanel.Controls.Add(this.chatEmojiButton);
             this.chatInputPanel.Controls.Add(this.chatAttachButton);
             this.chatInputPanel.Controls.Add(this.chatSendButton);
@@ -574,6 +582,62 @@
             this.chatInputPanel.Name = "chatInputPanel";
             this.chatInputPanel.Size = new System.Drawing.Size(82, 30);
             this.chatInputPanel.TabIndex = 1;
+            // 
+            // tabPageAgent
+            // 
+            this.tabPageAgent.Controls.Add(this.agentHistoryBox);
+            this.tabPageAgent.Controls.Add(this.agentInputPanel);
+            this.tabPageAgent.Location = new System.Drawing.Point(4, 25);
+            this.tabPageAgent.Name = "tabPageAgent";
+            this.tabPageAgent.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPageAgent.Size = new System.Drawing.Size(88, 71);
+            this.tabPageAgent.TabIndex = 2;
+            this.tabPageAgent.Text = "Agent";
+            this.tabPageAgent.UseVisualStyleBackColor = true;
+            // 
+            // agentHistoryBox
+            // 
+            this.agentHistoryBox.BackColor = System.Drawing.Color.White;
+            this.agentHistoryBox.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.agentHistoryBox.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.agentHistoryBox.Location = new System.Drawing.Point(3, 3);
+            this.agentHistoryBox.Name = "agentHistoryBox";
+            this.agentHistoryBox.ReadOnly = true;
+            this.agentHistoryBox.Size = new System.Drawing.Size(82, 35);
+            this.agentHistoryBox.TabIndex = 0;
+            this.agentHistoryBox.Text = "";
+            // 
+            // agentInputPanel
+            // 
+            this.agentInputPanel.Controls.Add(this.agentInputBox);
+            this.agentInputPanel.Controls.Add(this.agentSendButton);
+            this.agentInputPanel.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.agentInputPanel.Location = new System.Drawing.Point(3, 38);
+            this.agentInputPanel.Name = "agentInputPanel";
+            this.agentInputPanel.Size = new System.Drawing.Size(82, 30);
+            this.agentInputPanel.TabIndex = 1;
+            // 
+            // agentInputBox
+            // 
+            this.agentInputBox.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.agentInputBox.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.agentInputBox.Location = new System.Drawing.Point(0, 0);
+            this.agentInputBox.Name = "agentInputBox";
+            this.agentInputBox.Size = new System.Drawing.Size(32, 30);
+            this.agentInputBox.TabIndex = 0;
+            this.agentInputBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.agentInputBox_KeyDown);
+            // 
+            // agentSendButton
+            // 
+            this.agentSendButton.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.agentSendButton.Dock = System.Windows.Forms.DockStyle.Right;
+            this.agentSendButton.Text = "➤";
+            this.agentSendButton.Location = new System.Drawing.Point(92, 0);
+            this.agentSendButton.Name = "agentSendButton";
+            this.agentSendButton.Size = new System.Drawing.Size(50, 30);
+            this.agentSendButton.TabIndex = 1;
+            this.agentSendButton.UseVisualStyleBackColor = true;
+            this.agentSendButton.Click += new System.EventHandler(this.agentSendButton_Click);
             // 
             // chatInputBox
             // 
@@ -584,6 +648,28 @@
             this.chatInputBox.Size = new System.Drawing.Size(32, 30);
             this.chatInputBox.TabIndex = 0;
             this.chatInputBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.chatInputBox_KeyDown);
+            // 
+            // chatClearButton
+            // 
+            this.chatClearButton.Dock = System.Windows.Forms.DockStyle.Right;
+            this.chatClearButton.Location = new System.Drawing.Point(2, 0);
+            this.chatClearButton.Name = "chatClearButton";
+            this.chatClearButton.Size = new System.Drawing.Size(30, 30);
+            this.chatClearButton.TabIndex = 4;
+            this.chatClearButton.Text = "🗑️";
+            this.chatClearButton.UseVisualStyleBackColor = true;
+            this.chatClearButton.Click += new System.EventHandler(this.chatClearButton_Click);
+            // 
+            // chatClearButton
+            // 
+            this.chatClearButton.Dock = System.Windows.Forms.DockStyle.Right;
+            this.chatClearButton.Location = new System.Drawing.Point(2, 0);
+            this.chatClearButton.Name = "chatClearButton";
+            this.chatClearButton.Size = new System.Drawing.Size(30, 30);
+            this.chatClearButton.TabIndex = 4;
+            this.chatClearButton.Text = "🗑";
+            this.chatClearButton.UseVisualStyleBackColor = true;
+            this.chatClearButton.Click += new System.EventHandler(this.chatClearButton_Click);
             // 
             // chatEmojiButton
             // 
@@ -611,7 +697,8 @@
             // 
             this.chatSendButton.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
             this.chatSendButton.Dock = System.Windows.Forms.DockStyle.Right;
-            this.chatSendButton.Image = ((System.Drawing.Image)(resources.GetObject("chatSendButton.Image")));
+            //this.chatSendButton.Image = ((System.Drawing.Image)(resources.GetObject("chatSendButton.Image")));
+            this.chatSendButton.Text = "➤";
             this.chatSendButton.Location = new System.Drawing.Point(92, 0);
             this.chatSendButton.Name = "chatSendButton";
             this.chatSendButton.Size = new System.Drawing.Size(50, 30);
@@ -762,6 +849,7 @@
         private System.Windows.Forms.RichTextBox terminalBox;
         private System.Windows.Forms.Button chatEmojiButton;
         private System.Windows.Forms.Button chatAttachButton;
+        private System.Windows.Forms.Button chatClearButton;
         private System.Windows.Forms.ToolStripMenuItem newFileToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem newTextFileToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem openFileToolStripMenuItem;
@@ -772,6 +860,11 @@
         private System.Windows.Forms.TextBox chatInputBox;
         private System.Windows.Forms.Button chatSendButton;
         private System.Windows.Forms.TabControl sidebarTabControl;
+        private System.Windows.Forms.TabPage tabPageAgent;
+        private System.Windows.Forms.RichTextBox agentHistoryBox;
+        private System.Windows.Forms.Panel agentInputPanel;
+        private System.Windows.Forms.TextBox agentInputBox;
+        private System.Windows.Forms.Button agentSendButton;
         private System.Windows.Forms.TabPage tabPageExplorer;
         private System.Windows.Forms.TabPage tabPageChat;
         private System.Windows.Forms.TreeView fileTreeView;

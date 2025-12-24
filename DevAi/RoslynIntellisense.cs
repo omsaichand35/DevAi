@@ -1,5 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -394,6 +396,24 @@ except Exception as ex:
             {
                 return new List<string>();
             }
+        }
+
+        public SyntaxTree GetSyntaxTree(string source)
+        {
+            if (string.IsNullOrEmpty(source)) return null;
+            return CSharpSyntaxTree.ParseText(source);
+        }
+
+        public IEnumerable<MethodDeclarationSyntax> GetMethods(SyntaxTree tree)
+        {
+            if (tree == null) return Enumerable.Empty<MethodDeclarationSyntax>();
+            return tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>();
+        }
+
+        public IEnumerable<ClassDeclarationSyntax> GetClasses(SyntaxTree tree)
+        {
+            if (tree == null) return Enumerable.Empty<ClassDeclarationSyntax>();
+            return tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>();
         }
 
         public void Dispose()
